@@ -1,32 +1,68 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { apiFetch } from '../api'
 
-const checkIns = ['08:48', '08:52', '08:55', '08:50', '08:58']
-const checkOuts = ['18:02', '17:58', '18:05', '18:10', '17:55']
+export default function Personal({ selectedMonth, userUuid }: { selectedMonth: string; userUuid: string }) {
+  const [records, setRecords] = useState<any[]>([])
+  const [vacationBalance, setVacationBalance] = useState(0)
+  const [overtimeBalance, setOvertimeBalance] = useState(0)
+  const [loading, setLoading] = useState(false)
 
-const monthlyRecords = Array.from({ length: 30 }, (_, i) => {
-  const day = i + 1
-  const date = `2026-05-${String(day).padStart(2, '0')}`
-  if (day % 7 === 0) return { date, day, checkIn: '--:--', checkOut: '--:--', status: '缺勤' as const }
-  if (day % 5 === 0) return { date, day, checkIn: '09:15', checkOut: '18:30', status: '迟到' as const }
-  return { date, day, checkIn: checkIns[i % 5], checkOut: checkOuts[i % 5], status: '正常' as const }
-})
-
-export default function Personal({ selectedMonth }: { selectedMonth: string }) {
   const [showDoorModal, setShowDoorModal] = useState(false)
   const [doorModalDate, setDoorModalDate] = useState('')
+  const [doorRecords, setDoorRecords] = useState<any[]>([])
+  const [doorLoading, setDoorLoading] = useState(false)
+
+  useEffect(() => {
+    if (!userUuid) return
+    const fetchAttendance = async () => {
+      setLoading(true)
+      try {
+        const qs = new URLSearchParams({ userUuid, month: selectedMonth + '-01' })
+        const res = await apiFetch(`/api/attendance/personal?${qs}`)
+        const d = await res.json()
+        if (d.code === 200) {
+          setRecords(d.data?.records || d.data || [])
+          if (d.data?.vacationBalance !== undefined) setVacationBalance(d.data.vacationBalance)
+          if (d.data?.overtimeBalance !== undefined) setOvertimeBalance(d.data.overtimeBalance)
+        } else { setRecords([]) }
+      } catch { setRecords([]) }
+      setLoading(false)
+    }
+    fetchAttendance()
+  }, [userUuid, selectedMonth])
+
+  const openDoorModal = async (date: string) => {
+    setDoorModalDate(date)
+    setShowDoorModal(true)
+    setDoorLoading(true)
+    try {
+      const qs = new URLSearchParams({ userUuid, date })
+      const res = await apiFetch(`/api/door/record?${qs}`)
+      const d = await res.json()
+      setDoorRecords(d.code === 200 ? (d.data || []) : [])
+    } catch { setDoorRecords([]) }
+    setDoorLoading(false)
+  }
+
+  const fmtStatus = (s: any) => {
+    if (s === 0 || s === '正常') return '正常'
+    if (s === 1 || s === '迟到') return '迟到'
+    if (s === 2 || s === '缺勤') return '缺勤'
+    return '--'
+  }
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <div className="flex items-center justify-between">
-            <div><p className="text-sm text-gray-500">年假余额</p><p className="text-3xl font-bold text-blue-600 mt-1">12<span className="text-lg text-gray-400 ml-0.5">小时</span></p></div>
+            <div><p className="text-sm text-gray-500">年假余额</p><p className="text-3xl font-bold text-blue-600 mt-1">{vacationBalance}<span className="text-lg text-gray-400 ml-0.5">小时</span></p></div>
             <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-2xl">🏖️</div>
           </div>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <div className="flex items-center justify-between">
-            <div><p className="text-sm text-gray-500">调休假余额</p><p className="text-3xl font-bold text-amber-600 mt-1">3<span className="text-lg text-gray-400 ml-0.5">小时</span></p></div>
+            <div><p className="text-sm text-gray-500">调休假余额</p><p className="text-3xl font-bold text-amber-600 mt-1">{overtimeBalance}<span className="text-lg text-gray-400 ml-0.5">小时</span></p></div>
             <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-2xl">🔄</div>
           </div>
         </div>
@@ -46,24 +82,37 @@ export default function Personal({ selectedMonth }: { selectedMonth: string }) {
               </tr>
             </thead>
             <tbody>
-              {monthlyRecords.map(r => (
-                <tr key={r.day} className="border-b border-gray-50 hover:bg-gray-50 transition">
-                  <td className="px-4 py-3 text-gray-700">{r.date}</td>
-                  <td className="px-4 py-3 text-gray-700">{r.checkIn}</td>
-                  <td className="px-4 py-3 text-gray-700">{r.checkOut}</td>
-                  <td className="px-4 py-3 text-center text-gray-700">{r.status === '缺勤' ? '--' : (() => {
-                    const [h1, m1] = r.checkIn.split(':').map(Number)
-                    const [h2, m2] = r.checkOut.split(':').map(Number)
-                    return ((h2 * 60 + m2 - h1 * 60 - m1) / 60).toFixed(1) + '小时'
-                  })()}</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${r.status === '正常' ? 'bg-green-50 text-green-700' : r.status === '迟到' ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>{r.status}</span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => { setDoorModalDate(r.date); setShowDoorModal(true) }} className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 transition">🚪 门禁</button>
-                  </td>
-                </tr>
-              ))}
+              {loading ? (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">加载中...</td></tr>
+              ) : records.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">暂无考勤记录</td></tr>
+              ) : (
+                records.map((r: any, i: number) => {
+                  const st = fmtStatus(r.status)
+                  return (
+                    <tr key={r.date || i} className="border-b border-gray-50 hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 text-gray-700">{r.date}</td>
+                      <td className="px-4 py-3 text-gray-700">{r.checkIn || '--:--'}</td>
+                      <td className="px-4 py-3 text-gray-700">{r.checkOut || '--:--'}</td>
+                      <td className="px-4 py-3 text-center text-gray-700">
+                        {r.workHours != null ? `${r.workHours}小时` : (
+                          st === '缺勤' || !r.checkIn || r.checkIn === '--:--' ? '--' : (() => {
+                            const [h1, m1] = r.checkIn.split(':').map(Number)
+                            const [h2, m2] = r.checkOut.split(':').map(Number)
+                            return ((h2 * 60 + m2 - h1 * 60 - m1) / 60).toFixed(1) + '小时'
+                          })()
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${st === '正常' ? 'bg-green-50 text-green-700' : st === '迟到' ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>{st}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => openDoorModal(r.date)} className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 transition">🚪 门禁</button>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -79,17 +128,18 @@ export default function Personal({ selectedMonth }: { selectedMonth: string }) {
               </button>
             </div>
             <div className="space-y-2">
-              {[
-                { time: '08:32', door: '公司大门', location: '1F 正门', status: '正常' },
-                { time: '12:05', door: '食堂大门', location: 'B1 食堂', status: '正常' },
-                { time: '13:00', door: '公司大门', location: '1F 正门', status: '正常' },
-                { time: '18:10', door: '公司大门', location: '1F 正门', status: '正常' },
-              ].map((r, i) => (
-                <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg text-sm">
-                  <div><p className="text-gray-800 font-medium">{r.time}</p><p className="text-gray-500 text-xs">{r.door} · {r.location}</p></div>
-                  <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${r.status === '正常' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{r.status}</span>
-                </div>
-              ))}
+              {doorLoading ? (
+                <p className="text-center text-gray-400 text-sm py-4">加载中...</p>
+              ) : doorRecords.length === 0 ? (
+                <p className="text-center text-gray-400 text-sm py-4">暂无门禁记录</p>
+              ) : (
+                doorRecords.map((r: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg text-sm">
+                    <div><p className="text-gray-800 font-medium">{r.time || r.recordTime || '--:--'}</p><p className="text-gray-500 text-xs">{r.door || r.doorName || '--'} · {r.location || '--'}</p></div>
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${(r.status === 0 || r.status === '正常') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{r.status === 0 || r.status === '正常' ? '正常' : '异常'}</span>
+                  </div>
+                ))
+              )}
             </div>
             <button onClick={() => setShowDoorModal(false)} className="w-full mt-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200 transition">关闭</button>
           </div>

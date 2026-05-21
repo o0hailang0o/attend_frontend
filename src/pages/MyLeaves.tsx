@@ -55,7 +55,7 @@ export default function MyLeaves({
     if (!userUuid) return
     setLoading(true)
     try {
-      const qs = new URLSearchParams({ userUuid, page: String(page), size: String(pageSize) })
+      const qs = new URLSearchParams({ userUuid, month: selectedMonth + '-01', page: String(page), size: String(pageSize) })
       const res = await apiFetch(`/api/apply?${qs}`)
       const d = await res.json()
       if (d.code === 200) {
@@ -66,7 +66,7 @@ export default function MyLeaves({
     setLoading(false)
   }
 
-  useEffect(() => { fetchList(myLeavePage) }, [userUuid, myLeavePage])
+  useEffect(() => { fetchList(myLeavePage) }, [userUuid, myLeavePage, selectedMonth])
 
   const duration = calcDuration(form.startDate, form.startTime, form.endDate, form.endTime)
 
@@ -134,6 +134,7 @@ export default function MyLeaves({
       setEditingUuid('')
       setForm({ ...blankForm })
       setMyLeavePage(1)
+      fetchList(1)
     } catch (err: any) {
       alert(err.message || '提交失败')
     } finally {

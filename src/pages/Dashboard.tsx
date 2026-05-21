@@ -115,7 +115,7 @@ export default function Dashboard() {
 
           {activeTab === 'overview' && <Overview />}
           {activeTab === 'attendance' && <Attendance />}
-          {activeTab === 'personal' && <Personal selectedMonth={selectedMonth} />}
+          {activeTab === 'personal' && <Personal selectedMonth={selectedMonth} userUuid={userUuid} />}
           {activeTab === 'myLeaves' && <MyLeaves myLeavePage={myLeavePage} setMyLeavePage={setMyLeavePage} userUuid={userUuid} selectedMonth={selectedMonth} daysInMonth={daysInMonth} />}
           {activeTab === 'approval' && (
             <Approval

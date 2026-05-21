@@ -9,6 +9,8 @@ type RuleItem = {
   vacation: number; comp: number
 }
 
+const rulePageSize = 10
+
 const blankRule = {
   uuid: '', name: '', flexibility: 0, start_time: '09:00', end_time: '18:00',
   middle_rest: 1, middle_start: '', middle_end: '', vacation: 1, comp: 1,
@@ -68,8 +70,33 @@ export default function Rules() {
   const [loadingEdit, setLoadingEdit] = useState(false)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [rulePage, setRulePage] = useState(1)
 
   const refresh = async () => setRuleList(await fetchAll())
+
+  const totalPages = Math.ceil(ruleList.length / rulePageSize) || 1
+  const currentPageRules = ruleList.slice((rulePage - 1) * rulePageSize, rulePage * rulePageSize)
+
+  const allSelected = ruleList.length > 0 && ruleList.every(r => selectedIds.has(r.id))
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(ruleList.map(r => r.id)))
+  }
+  const toggleOne = (id: number) => {
+    const next = new Set(selectedIds)
+    next.has(id) ? next.delete(id) : next.add(id)
+    setSelectedIds(next)
+  }
+
+  const handleBatchDelete = async () => {
+    if (!confirm(`确认删除选中的 ${selectedIds.size} 条考勤规则？`)) return
+    const uuids = ruleList.filter(r => selectedIds.has(r.id)).map(r => r.uuid)
+    for (const uuid of uuids) {
+      try { await apiFetch(`/api/rule/${uuid}`, { method: 'DELETE' }) } catch {}
+    }
+    setSelectedIds(new Set())
+    await refresh()
+  }
 
   useEffect(() => { refresh() }, [])
 
@@ -154,11 +181,22 @@ export default function Rules() {
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition">+ 新增规则</button>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-2">
+          <span className="text-xs text-gray-500">已选 {selectedIds.size} 条</span>
+          <button onClick={handleBatchDelete} className="text-xs px-3 py-1.5 text-white bg-red-500 rounded-lg hover:bg-red-600 transition">批量删除</button>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-50">
+                <th className="px-4 py-3 w-10">
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500/20" />
+                </th>
                 {['规则名称', '上班时间', '下班时间', '弹性(小时)', '午休开始', '午休结束', '计入工时', '年假', '调休', '操作'].map(h => (
                   <th key={h} className={`px-4 py-3 text-gray-500 font-medium ${h === '操作' ? 'text-center' : 'text-left'}`}>{h}</th>
                 ))}
@@ -166,10 +204,14 @@ export default function Rules() {
             </thead>
             <tbody>
               {ruleList.length === 0 ? (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400 text-sm">暂无考勤规则，点击上方按钮新增</td></tr>
+                <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-400 text-sm">暂无考勤规则，点击上方按钮新增</td></tr>
               ) : (
-                ruleList.map(r => (
-                  <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
+                currentPageRules.map(r => (
+                  <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50 transition ${selectedIds.has(r.id) ? 'bg-blue-50/50' : ''}`}>
+                    <td className="px-4 py-3">
+                      <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleOne(r.id)}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500/20" />
+                    </td>
                     <td className="px-4 py-3 text-gray-700 font-medium">{r.name}</td>
                     <td className="px-4 py-3 text-gray-600">{r.start_time.slice(0, 5)}</td>
                     <td className="px-4 py-3 text-gray-600">{r.end_time.slice(0, 5)}</td>
@@ -190,6 +232,17 @@ export default function Rules() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border border-gray-100 px-3 py-1.5">
+        <p className="text-xs text-gray-500">共 {ruleList.length} 条，第 {rulePage}/{totalPages} 页</p>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setRulePage(p => Math.max(1, p - 1))} disabled={rulePage === 1} className="px-2 py-0.5 text-xs border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-50 transition">上一页</button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+            <button key={p} onClick={() => setRulePage(p)} className={`w-6 h-6 text-xs rounded transition ${rulePage === p ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>{p}</button>
+          ))}
+          <button onClick={() => setRulePage(p => Math.min(totalPages, p + 1))} disabled={rulePage === totalPages} className="px-2 py-0.5 text-xs border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-50 transition">下一页</button>
         </div>
       </div>
 
