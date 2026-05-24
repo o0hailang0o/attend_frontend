@@ -3,16 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import Overview from './Overview'
 import Attendance from './Attendance'
-import Personal from './Personal'
 import MyLeaves from './MyLeaves'
 import Approval from './Approval'
 import Users from './Users'
 import Rules from './Rules'
-import Settings from './Settings'
 
-type TabKey = 'overview' | 'attendance' | 'personal' | 'myLeaves' | 'approval' | 'users' | 'rules' | 'settings'
+type TabKey = 'overview' | 'attendance' | 'myLeaves' | 'approval' | 'users' | 'rules'
 
-const tabsWithMonth: TabKey[] = ['approval', 'personal', 'myLeaves']
+const tabsWithMonth: TabKey[] = ['approval', 'myLeaves', 'attendance']
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -22,9 +20,12 @@ export default function Dashboard() {
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
   })
 
-  const userUuid = (() => {
-    try { const u = localStorage.getItem('auth_user'); return u ? (JSON.parse(u).uuid || '') : '' } catch { return '' }
+  const authUser = (() => {
+    try { const u = localStorage.getItem('auth_user'); return u ? JSON.parse(u) : null } catch { return null }
   })()
+  const userUuid = authUser?.uuid || ''
+  const userName = authUser?.name || authUser?.account || '未知'
+  const userDept = authUser?.department || authUser?.deptName || ''
 
   // Approval
   const [approvalPage, setApprovalPage] = useState(1)
@@ -56,12 +57,10 @@ export default function Dashboard() {
   const pageTitles: Record<TabKey, [string, string]> = {
     overview: ['工作台', '欢迎回来，以下是今日公司整体出勤情况。'],
     attendance: ['考勤记录', '查看公司全体员工的考勤记录。'],
-    personal: ['个人考勤', '查看您的个人月度考勤记录和门禁记录。'],
     myLeaves: ['个人申请', '查看您提交的请假申请记录。'],
     approval: ['审批列表', '审批和处理员工的请假申请。'],
     users: ['人员管理', '管理员工信息和考勤规则分配。'],
     rules: ['考勤规则', '管理考勤规则，包括上下班时间、午休设置、假期额度等。'],
-    settings: ['个人设置', ''],
   }
 
   return (
@@ -85,10 +84,10 @@ export default function Dashboard() {
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
             </button>
             <div className="flex items-center gap-2 cursor-pointer">
-              <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-medium text-sm">张</div>
+              <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-medium text-sm">{userName.charAt(0)}</div>
               <div className="hidden sm:block text-sm">
-                <p className="font-medium text-gray-700 leading-tight">张三</p>
-                <p className="text-gray-400 text-xs">人事部</p>
+                <p className="font-medium text-gray-700 leading-tight">{userName}</p>
+                {userDept && <p className="text-gray-400 text-xs">{userDept}</p>}
               </div>
             </div>
             <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-red-500 transition ml-2">退出</button>
@@ -99,7 +98,7 @@ export default function Dashboard() {
       <div className="flex h-[calc(100vh-4.1rem)] overflow-hidden">
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-        <main className="flex-1 p-2 lg:p-4 pb-14 lg:pb-3 overflow-y-auto">
+        <main className="flex-1 p-2 lg:p-4 pb-14 lg:pb-3 overflow-y-auto flex flex-col">
           <div className="mb-1">
             {tabsWithMonth.includes(activeTab) && (
               <input
@@ -114,14 +113,12 @@ export default function Dashboard() {
           </div>
 
           {activeTab === 'overview' && <Overview />}
-          {activeTab === 'attendance' && <Attendance />}
-          {activeTab === 'personal' && <Personal selectedMonth={selectedMonth} userUuid={userUuid} />}
+          {activeTab === 'attendance' && <Attendance selectedMonth={selectedMonth} daysInMonth={daysInMonth} />}
           {activeTab === 'myLeaves' && <MyLeaves myLeavePage={myLeavePage} setMyLeavePage={setMyLeavePage} userUuid={userUuid} selectedMonth={selectedMonth} daysInMonth={daysInMonth} />}
           {activeTab === 'approval' && (
             <Approval
               searchQuery={searchQuery} setSearchQuery={setSearchQuery}
               approvalPage={approvalPage} setApprovalPage={setApprovalPage}
-              userUuid={userUuid}
             />
           )}
           {activeTab === 'users' && (
@@ -133,7 +130,6 @@ export default function Dashboard() {
             />
           )}
           {activeTab === 'rules' && <Rules />}
-          {activeTab === 'settings' && <Settings />}
         </main>
       </div>
     </div>

@@ -6,14 +6,14 @@ type RuleItem = {
   id: number; uuid: string; name: string; flexibility: number
   start_time: string; end_time: string
   middle_rest: number; middle_start: string; middle_end: string
-  vacation: number; comp: number
+  vacation: number; comp: number; overtime_apply: number
 }
 
 const rulePageSize = 10
 
 const blankRule = {
   uuid: '', name: '', flexibility: 0, start_time: '09:00', end_time: '18:00',
-  middle_rest: 1, middle_start: '', middle_end: '', vacation: 1, comp: 1,
+  middle_rest: 1, middle_start: '', middle_end: '', vacation: 1, comp: 1, overtime_apply: 1,
 }
 
 const toCamel = (f: any) => ({
@@ -27,6 +27,7 @@ const toCamel = (f: any) => ({
   vacation: f.vacation,
   comp: f.comp,
   accuracy: 0.5,
+  overtimeApply: f.overtime_apply ?? 1,
 })
 
 const fromCamel = (b: any): RuleItem => ({
@@ -41,6 +42,7 @@ const fromCamel = (b: any): RuleItem => ({
   middle_end: b.middleEnd || '',
   vacation: b.vacation ?? 0,
   comp: b.comp ?? 0,
+  overtime_apply: b.overtimeApply ?? 1,
 })
 
 const fetchAll = async (): Promise<RuleItem[]> => {
@@ -110,7 +112,7 @@ export default function Rules() {
         uuid: data.uuid, name: data.name, flexibility: data.flexibility,
         start_time: data.start_time, end_time: data.end_time,
         middle_rest: data.middle_rest, middle_start: data.middle_start, middle_end: data.middle_end,
-        vacation: data.vacation, comp: data.comp,
+        vacation: data.vacation, comp: data.comp, overtime_apply: data.overtime_apply,
       })
       setEditing(data)
       setShowForm(true)
@@ -197,14 +199,14 @@ export default function Rules() {
                   <input type="checkbox" checked={allSelected} onChange={toggleAll}
                     className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500/20" />
                 </th>
-                {['规则名称', '上班时间', '下班时间', '弹性(小时)', '午休开始', '午休结束', '计入工时', '年假', '调休', '操作'].map(h => (
+                {['规则名称', '上班时间', '下班时间', '弹性(小时)', '午休开始', '午休结束', '计入工时', '年假', '调休', '加班申请', '操作'].map(h => (
                   <th key={h} className={`px-4 py-3 text-gray-500 font-medium ${h === '操作' ? 'text-center' : 'text-left'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {ruleList.length === 0 ? (
-                <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-400 text-sm">暂无考勤规则，点击上方按钮新增</td></tr>
+                <tr><td colSpan={12} className="px-4 py-8 text-center text-gray-400 text-sm">暂无考勤规则，点击上方按钮新增</td></tr>
               ) : (
                 currentPageRules.map(r => (
                   <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50 transition ${selectedIds.has(r.id) ? 'bg-blue-50/50' : ''}`}>
@@ -221,6 +223,7 @@ export default function Rules() {
                     <td className="px-4 py-3 text-gray-600">{r.middle_rest ? '✓' : '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{r.vacation ? '✓' : '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{r.comp ? '✓' : '—'}</td>
+                    <td className="px-4 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${r.overtime_apply ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>{r.overtime_apply ? '需申请' : '无需'}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <button onClick={() => openEdit(r)} className="text-xs text-blue-600 hover:text-blue-800 transition">编辑</button>
@@ -305,6 +308,13 @@ export default function Rules() {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={!!form.comp} onChange={e => set('comp', e.target.checked ? 1 : 0)} className="w-4 h-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500/20" />
                   <span className="text-sm text-gray-500">启用调休额度</span>
+                </label>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-600 w-24 shrink-0">加班申请</label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!form.overtime_apply} onChange={e => set('overtime_apply', e.target.checked ? 1 : 0)} className="w-4 h-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500/20" />
+                  <span className="text-sm text-gray-500">加班需要申请（未勾选则按实际工时计入）</span>
                 </label>
               </div>
             </div>

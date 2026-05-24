@@ -1,14 +1,12 @@
-type TabKey = 'overview' | 'attendance' | 'personal' | 'myLeaves' | 'approval' | 'users' | 'rules' | 'settings'
+type TabKey = 'overview' | 'attendance' | 'myLeaves' | 'approval' | 'users' | 'rules'
 
 const menuItems: { key: TabKey; label: string; icon: string }[] = [
   { key: 'overview', label: '工作台', icon: '📊' },
   { key: 'rules', label: '考勤规则', icon: '📏' },
   { key: 'users', label: '人员管理', icon: '👥' },
   { key: 'attendance', label: '考勤记录', icon: '📋' },
-  { key: 'approval', label: '审批列表', icon: '✅' },
-  { key: 'personal', label: '个人考勤', icon: '👤' },
+  { key: 'approval', label: '我的审批', icon: '✅' },
   { key: 'myLeaves', label: '个人申请', icon: '📄' },
-  { key: 'settings', label: '个人设置', icon: '⚙️' },
 ]
 
 export default function Sidebar({

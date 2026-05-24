@@ -30,6 +30,7 @@ export default function Login() {
       const token = data.data?.token || ''
       localStorage.setItem('auth_token', token)
       localStorage.setItem('auth_user', JSON.stringify(data.data || { account: form.account }))
+      localStorage.setItem('auth_account', data.data?.account || form.account)
       setError('')
       setSuccess(true)
       setLoading(false)

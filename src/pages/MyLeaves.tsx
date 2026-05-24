@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { apiFetch } from '../api'
 import TimeSelect from '../components/TimeSelect'
 
@@ -16,15 +16,20 @@ const statusMap: Record<number, { label: string; cls: string }> = {
 }
 
 const blankForm = {
-  type: '年假', startDate: '', endDate: '', startTime: '', endTime: '', reason: '',
+  type: '年假', startDate: '', endDate: '', startTime: '', endTime: '', reason: '', leaderUuid: '',
 }
 
-function calcDuration(date: string, time: string, endDate: string, endTime: string): number {
-  if (!date || !time || !endDate || !endTime) return 0
-  const s = new Date(`${date}T${time}`)
-  const e = new Date(`${endDate}T${endTime}`)
-  if (e <= s) return 0
-  return Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60))
+const LAST_APPROVER_KEY = 'last_approver'
+
+const saveLastApprover = (uuid: string, name: string) => {
+  try { localStorage.setItem(LAST_APPROVER_KEY, JSON.stringify({ uuid, name })) } catch {}
+}
+
+const loadLastApprover = (): { uuid: string; name: string } | null => {
+  try {
+    const raw = localStorage.getItem(LAST_APPROVER_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
 }
 
 function canEdit(status: number) {
@@ -44,10 +49,38 @@ export default function MyLeaves({
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
 
+  const [leaveBalance, setLeaveBalance] = useState<{
+    annualRemainingHours: number; compRemainingHours: number
+  } | null>(null)
+
   const [showModal, setShowModal] = useState(false)
   const [editingUuid, setEditingUuid] = useState('')
   const [form, setForm] = useState({ ...blankForm })
+  const [leaderList, setLeaderList] = useState<{ uuid: string; name: string }[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [searchText, setSearchText] = useState('')
+  const [showDropdown, setShowDropdown] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
+
+  useEffect(() => {
+    apiFetch('/api/leader')
+      .then(r => r.json())
+      .then(d => {
+        if (d.code === 200) {
+          const list = (d.data || []).map((item: any) => ({ uuid: item.leaderUuid, name: item.leaderName }))
+          setLeaderList(list)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    apiFetch('/api/leaveBalance')
+      .then(r => r.json())
+      .then(d => { if (d.code === 200 && d.data) setLeaveBalance(d.data) })
+      .catch(() => {})
+  }, [])
 
   const inputCls = 'flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none'
 
@@ -68,11 +101,43 @@ export default function MyLeaves({
 
   useEffect(() => { fetchList(myLeavePage) }, [userUuid, myLeavePage, selectedMonth])
 
-  const duration = calcDuration(form.startDate, form.startTime, form.endDate, form.endTime)
+  useEffect(() => {
+    if (showModal && form.leaderUuid) {
+      const name = leaderList.find(l => l.uuid === form.leaderUuid)?.name
+      if (name) setSearchText(name)
+    }
+  }, [leaderList, showModal])
+
+  const [duration, setDuration] = useState(0)
+  const filteredLeaders = leaderList.filter(l => l.name.includes(searchText))
+
+  useEffect(() => {
+    if (!form.startDate || !form.startTime || !form.endDate || !form.endTime) {
+      setDuration(0)
+      return
+    }
+    const st = `${form.startDate} ${form.startTime}`
+    const et = `${form.endDate} ${form.endTime}`
+    const timer = setTimeout(() => {
+      apiFetch('/api/apply/calc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startTime: st, endTime: et }),
+      })
+        .then(r => r.json())
+        .then(d => { if (d.code === 200) setDuration(Number(d.data)) })
+        .catch(() => {})
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [form.startDate, form.startTime, form.endDate, form.endTime])
 
   const openCreate = () => {
     setEditingUuid('')
-    setForm({ ...blankForm })
+    const today = new Date()
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    const last = loadLastApprover()
+    setForm({ ...blankForm, startDate: todayStr, endDate: todayStr, startTime: '00:00', endTime: '00:00', leaderUuid: last?.uuid || '' })
+    setSearchText(last?.name || '')
     setShowModal(true)
   }
 
@@ -87,8 +152,12 @@ export default function MyLeaves({
       const sTime = data.startTime ? data.startTime.slice(11, 16) : ''
       const eDate = data.endTime ? data.endTime.slice(0, 10) : ''
       const eTime = data.endTime ? data.endTime.slice(11, 16) : ''
-      setForm({ type: typeLabel, startDate: sDate, startTime: sTime, endDate: eDate, endTime: eTime, reason: '' })
+      const apiUuid = data.leaderUuid || ''
+      const finalUuid = apiUuid || (loadLastApprover()?.uuid || '')
+      setForm({ type: typeLabel, startDate: sDate, startTime: sTime, endDate: eDate, endTime: eTime, reason: data.reason || '', leaderUuid: finalUuid })
       setEditingUuid(uuid)
+      const leaderName = leaderList.find(l => l.uuid === finalUuid)?.name || loadLastApprover()?.name || ''
+      setSearchText(leaderName)
       setShowModal(true)
     } catch (err: any) {
       alert(err.message || '获取详情失败')
@@ -110,6 +179,20 @@ export default function MyLeaves({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!userUuid) { alert('未获取到用户信息'); return }
+    if (form.type === '年假') {
+      if (leaveBalance && duration > leaveBalance.annualRemainingHours) {
+        alert(`年假余额不足（剩余 ${leaveBalance.annualRemainingHours} 小时，申请 ${duration} 小时）`)
+        setSubmitting(false)
+        return
+      }
+    }
+    if (form.type === '调休假') {
+      if (leaveBalance && duration > leaveBalance.compRemainingHours) {
+        alert(`调休假余额不足（剩余 ${leaveBalance.compRemainingHours} 小时，申请 ${duration} 小时）`)
+        setSubmitting(false)
+        return
+      }
+    }
     setSubmitting(true)
     try {
       const isEdit = !!editingUuid
@@ -120,7 +203,9 @@ export default function MyLeaves({
         startTime: `${form.startDate}T${form.startTime}:00`,
         endTime: `${form.endDate}T${form.endTime}:00`,
         length: duration,
+        reason: form.reason,
         userUuid,
+        leaderUuid: form.leaderUuid,
       }
       if (isEdit) body.uuid = editingUuid
       const res = await apiFetch('/api/apply', {
@@ -152,6 +237,33 @@ export default function MyLeaves({
 
   return (
     <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">剩余年假</p>
+              <p className="text-2xl font-bold text-blue-600 mt-1">
+                {leaveBalance !== null ? leaveBalance.annualRemainingHours : '...'}
+                <span className="text-base text-gray-400 ml-0.5">小时</span>
+              </p>
+            </div>
+            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-xl">🏖️</div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">剩余调休假</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">
+                {leaveBalance !== null ? leaveBalance.compRemainingHours : '...'}
+                <span className="text-base text-gray-400 ml-0.5">小时</span>
+              </p>
+            </div>
+            <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center text-xl">🔄</div>
+          </div>
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <button onClick={openCreate}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition">+ 考勤申请</button>
@@ -162,19 +274,19 @@ export default function MyLeaves({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-50">
-                {['类型', '开始时间', '结束时间', '时长', '状态', '操作'].map(h => (
+                {['类型', '开始时间', '结束时间', '时长', '工作流', '状态', '操作'].map(h => (
                   <th key={h} className={`text-left px-4 py-3 text-gray-500 font-medium ${h === '操作' ? 'text-center' : ''}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">加载中...</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-sm">加载中...</td></tr>
               ) : records.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">暂无申请记录</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-sm">暂无申请记录</td></tr>
               ) : (
                 records.map((r: any) => {
-                  const st = statusMap[r.status] || { label: '未知', cls: 'bg-gray-50 text-gray-500' }
+                  const st = r.statusName ? { label: r.statusName, cls: statusMap[r.status]?.cls || 'bg-gray-50 text-gray-500' } : (statusMap[r.status] || { label: '未知', cls: 'bg-gray-50 text-gray-500' })
                   const editable = canEdit(r.status)
                   return (
                     <tr key={r.uuid} className="border-b border-gray-50 hover:bg-gray-50 transition">
@@ -182,6 +294,23 @@ export default function MyLeaves({
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmtDT(r.startTime)}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmtDT(r.endTime)}</td>
                       <td className="px-4 py-3 text-gray-700">{r.length} 小时</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          {r.workflow?.map((w: any, i: number) => (
+                            <div key={w.approveUuid || i} className="flex items-center gap-1">
+                              {i > 0 && <span className="text-gray-300 text-[10px]">→</span>}
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-medium ${
+                                w.status === 1 ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300' :
+                                w.status === 4 ? 'bg-gray-100 text-gray-500 ring-1 ring-gray-300' :
+                                w.status === 3 ? 'bg-red-100 text-red-700 ring-1 ring-red-300' :
+                                'bg-gray-50 text-gray-400 ring-1 ring-gray-200'
+                              }`} title={`${w.leaderName || '未知'} - ${w.statusName || ''}`}>
+                                {(w.leaderName || '?')[0]}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${st.cls}`}>{st.label}</span>
                       </td>
@@ -251,10 +380,62 @@ export default function MyLeaves({
               </div>
               <div className="flex items-start gap-3">
                 <label className="w-24 text-sm font-medium text-gray-700 shrink-0 mt-2.5">请假事由</label>
-                <textarea value={form.reason} onChange={e => setForm(p => ({ ...p, reason: e.target.value }))} rows={3} placeholder="请输入请假事由..." className={`${inputCls} resize-none`} />
+                <textarea value={form.reason} onChange={e => setForm(p => ({ ...p, reason: e.target.value }))} rows={3} placeholder="请输入请假事由..." className={`${inputCls} resize-none`} required />
               </div>
+              <div className="flex items-center gap-3">
+                <label className="w-24 text-sm font-medium text-gray-700 shrink-0">审批人</label>
+                <div className="relative flex-1" ref={searchRef}>
+                  <input
+                    type="text"
+                    value={searchText}
+                    onChange={e => {
+                      setSearchText(e.target.value)
+                      if (!e.target.value) setForm(p => ({ ...p, leaderUuid: '' }))
+                      setShowDropdown(true)
+                      if (searchRef.current) {
+                        const r = searchRef.current.getBoundingClientRect()
+                        setDropdownStyle({ position: 'fixed', left: r.left, top: r.bottom + 4, width: r.width, zIndex: 9999 })
+                      }
+                    }}
+                    onFocus={() => {
+                      setShowDropdown(true)
+                      if (searchRef.current) {
+                        const r = searchRef.current.getBoundingClientRect()
+                        setDropdownStyle({ position: 'fixed', left: r.left, top: r.bottom + 4, width: r.width, zIndex: 9999 })
+                      }
+                    }}
+                    onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                    placeholder="搜索审批人..."
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none ${form.leaderUuid ? 'pr-8' : ''}`}
+                    required
+                  />
+                  {form.leaderUuid && (
+                    <button
+                      type="button"
+                      onClick={() => { setForm(p => ({ ...p, leaderUuid: '' })); setSearchText('') }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
+                    >&times;</button>
+                  )}
+                </div>
+              </div>
+              {showDropdown && (
+                <div style={dropdownStyle} className="bg-white border border-gray-200 rounded-lg shadow-lg max-h-32 overflow-y-auto">
+                  {filteredLeaders.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-gray-400">无匹配结果</div>
+                  ) : (
+                    filteredLeaders.map(l => (
+                      <button
+                        key={l.uuid}
+                        type="button"
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition ${form.leaderUuid === l.uuid ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                        onMouseDown={() => { setForm(p => ({ ...p, leaderUuid: l.uuid })); setSearchText(l.name); setShowDropdown(false); saveLastApprover(l.uuid, l.name) }}
+                      >{l.name}</button>
+                    ))
+                  )}
+                </div>
+              )}
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => { setShowModal(false); setEditingUuid(''); setForm({ ...blankForm }) }} disabled={submitting}
+                <button type="button" onClick={() => { setShowModal(false); setEditingUuid(''); setForm({ ...blankForm }); setSearchText('') }} disabled={submitting}
                   className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition disabled:opacity-50">取消</button>
                 <button type="submit" disabled={submitting}
                   className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition disabled:opacity-50">{submitting ? '提交中...' : (editingUuid ? '保存' : '提交申请')}</button>

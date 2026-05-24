@@ -1,3 +1,5 @@
+import { useState, useEffect, useRef } from 'react'
+import { apiFetch } from '../api'
 import TimeSelect from '../components/TimeSelect'
 
 export default function LeaveApply({
@@ -14,18 +16,59 @@ export default function LeaveApply({
   handleLeaveSubmit: (e: React.FormEvent) => void
   submitting?: boolean
 }) {
+  const [leaderList, setLeaderList] = useState<{ uuid: string; name: string }[]>([])
+  const [searchText, setSearchText] = useState('')
+  const [showDropdown, setShowDropdown] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
+  const [leaveBalance, setLeaveBalance] = useState<{ annualRemainingHours: number; compRemainingHours: number } | null>(null)
+
+  const saveLastApprover = (uuid: string, name: string) => {
+    try { localStorage.setItem('last_approver', JSON.stringify({ uuid, name })) } catch {}
+  }
+
+  useEffect(() => {
+    if (!leaveForm.approver) {
+      try {
+        const raw = localStorage.getItem('last_approver')
+        if (raw) {
+          const last = JSON.parse(raw)
+          setLeaveForm({ ...leaveForm, approver: last.uuid })
+          setSearchText(last.name || '')
+        }
+      } catch {}
+    }
+  }, [])
+
+  useEffect(() => {
+    apiFetch('/api/leader')
+      .then(r => r.json())
+      .then(d => {
+        if (d.code === 200) {
+          const list = (d.data || []).map((item: any) => ({ uuid: item.leaderUuid, name: item.leaderName }))
+          setLeaderList(list)
+        }
+      })
+      .catch(() => {})
+    apiFetch('/api/leaveBalance')
+      .then(r => r.json())
+      .then(d => { if (d.code === 200 && d.data) setLeaveBalance(d.data) })
+      .catch(() => {})
+  }, [])
+
+  const filteredLeaders = leaderList.filter(l => l.name.includes(searchText))
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
           <div className="flex items-center justify-between">
-            <div><p className="text-sm text-gray-500">剩余年假</p><p className="text-2xl font-bold text-blue-600 mt-1">12<span className="text-base text-gray-400 ml-0.5">小时</span></p></div>
+            <div><p className="text-sm text-gray-500">剩余年假</p><p className="text-2xl font-bold text-blue-600 mt-1">{leaveBalance !== null ? leaveBalance.annualRemainingHours : '...'}<span className="text-base text-gray-400 ml-0.5">小时</span></p></div>
             <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-xl">🏖️</div>
           </div>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
           <div className="flex items-center justify-between">
-            <div><p className="text-sm text-gray-500">剩余调休假</p><p className="text-2xl font-bold text-amber-600 mt-1">3<span className="text-base text-gray-400 ml-0.5">小时</span></p></div>
+            <div><p className="text-sm text-gray-500">剩余调休假</p><p className="text-2xl font-bold text-amber-600 mt-1">{leaveBalance !== null ? leaveBalance.compRemainingHours : '...'}<span className="text-base text-gray-400 ml-0.5">小时</span></p></div>
             <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center text-xl">🔄</div>
           </div>
         </div>
@@ -69,13 +112,56 @@ export default function LeaveApply({
           </div>
           <div className="flex items-center gap-3">
             <label className="w-24 text-sm font-medium text-gray-700 shrink-0">审批人</label>
-            <select value={leaveForm.approver} onChange={e => setLeaveForm({ ...leaveForm, approver: e.target.value })} className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" required>
-              <option value="" disabled>请选择审批人</option>
-              <option value="李四">李四</option>
-              <option value="王五">王五</option>
-              <option value="赵六">赵六</option>
-            </select>
+            <div className="relative flex-1" ref={searchRef}>
+              <input
+                type="text"
+                value={searchText}
+                onChange={e => {
+                  setSearchText(e.target.value)
+                  if (!e.target.value) setLeaveForm({ ...leaveForm, approver: '' })
+                  setShowDropdown(true)
+                  if (searchRef.current) {
+                    const r = searchRef.current.getBoundingClientRect()
+                    setDropdownStyle({ position: 'fixed', left: r.left, top: r.bottom + 4, width: r.width, zIndex: 9999 })
+                  }
+                }}
+                onFocus={() => {
+                  setShowDropdown(true)
+                  if (searchRef.current) {
+                    const r = searchRef.current.getBoundingClientRect()
+                    setDropdownStyle({ position: 'fixed', left: r.left, top: r.bottom + 4, width: r.width, zIndex: 9999 })
+                  }
+                }}
+                onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                placeholder="搜索审批人..."
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none ${leaveForm.approver ? 'pr-8' : ''}`}
+                required
+              />
+              {leaveForm.approver && (
+                <button
+                  type="button"
+                  onClick={() => { setLeaveForm({ ...leaveForm, approver: '' }); setSearchText('') }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
+                >&times;</button>
+              )}
+            </div>
           </div>
+          {showDropdown && (
+            <div style={dropdownStyle} className="bg-white border border-gray-200 rounded-lg shadow-lg max-h-32 overflow-y-auto">
+              {filteredLeaders.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-gray-400">无匹配结果</div>
+              ) : (
+                filteredLeaders.map(l => (
+                  <button
+                    key={l.uuid}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition ${leaveForm.approver === l.uuid ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                    onMouseDown={() => { setLeaveForm({ ...leaveForm, approver: l.uuid }); setSearchText(l.name); setShowDropdown(false); saveLastApprover(l.uuid, l.name) }}
+                  >{l.name}</button>
+                ))
+              )}
+            </div>
+          )}
           <button type="submit" disabled={submitting} className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50">{submitting ? '提交中...' : '提交申请'}</button>
         </form>
       </div>
