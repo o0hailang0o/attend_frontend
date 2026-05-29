@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { apiFetch } from '../api'
 
 type UserItem = { uuid: string; name: string; workNum: string; deptName: string }
-type DoorAccessItem = { uuid: string; employeeUuid: string; employeeName: string; workNum: string; doorNo: string; direction: number; accessTime: string; accessDate: string }
+type DoorAccessItem = { uuid: string; employeeUuid: string; employeeName: string; workNum: string; doorNo: string; direction: number; accessDatetime: string }
 
 const getCurrentUserUuid = () => {
   try { const u = localStorage.getItem('auth_user'); return u ? (JSON.parse(u).uuid || '') : '' } catch { return '' }
@@ -280,7 +280,7 @@ export default function Attendance({ selectedMonth, daysInMonth }: { selectedMon
                   <tbody>
                     {doorRecords.map((d: DoorAccessItem) => (
                       <tr key={d.uuid} className="border-b border-gray-50">
-                        <td className="px-4 py-2 text-gray-700">{d.accessTime?.slice(0, 5)}</td>
+                        <td className="px-4 py-2 text-gray-700">{d.accessDatetime ? d.accessDatetime.slice(11, 19) : ''}</td>
                         <td className="px-4 py-2 text-gray-600">{d.doorNo}</td>
                         <td className="px-4 py-2">
                           <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${d.direction === 0 ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}`}>

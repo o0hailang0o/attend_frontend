@@ -55,7 +55,7 @@ export default function Dashboard() {
   ).getDate()
 
   const pageTitles: Record<TabKey, [string, string]> = {
-    overview: ['工作台', '欢迎回来，以下是今日公司整体出勤情况。'],
+    overview: ['工作台', ''],
     attendance: ['考勤记录', '查看公司全体员工的考勤记录。'],
     myLeaves: ['个人申请', '查看您提交的请假申请记录。'],
     approval: ['审批列表', '审批和处理员工的请假申请。'],

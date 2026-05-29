@@ -16,7 +16,7 @@ export const apiFetch = async (url: string, options?: RequestInit): Promise<Resp
     ...options,
     headers: { ...options?.headers, Authorization: `Bearer ${token}` } as HeadersInit,
   })
-  if (res.status === 401) {
+  if (res.status === 401 ) {
     goLogin()
     throw new Error('登录已过期')
   }
